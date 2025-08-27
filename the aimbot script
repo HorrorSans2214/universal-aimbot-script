@@ -1,0 +1,390 @@
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+
+local player = Players.LocalPlayer
+local camera = Workspace.CurrentCamera
+
+-- States
+local aimbotEnabled = false
+local espEnabled = false
+local teamCheckEnabled = true
+local lockedOn = false
+local target = nil
+local rainbowEnabled = false
+local rainbowHue = 0
+local headEnlarged = false
+local torsoEnlarged = false
+
+-- Hitbox sizes (for aiming only)
+local headSize = Vector3.new(10,10,10)
+local torsoSize = Vector3.new(10,10,5)
+
+-- ESP Folder
+local espFolder = Instance.new("Folder", Workspace)
+espFolder.Name = "ESP_Highlights"
+
+-- Raycast Params
+local rayParams = RaycastParams.new()
+rayParams.FilterType = Enum.RaycastFilterType.Blacklist
+
+----------------------------------------------------
+-- Helper Functions
+----------------------------------------------------
+local function isVisible(targetHead)
+	if not targetHead then return false end
+	rayParams.FilterDescendantsInstances = {player.Character}
+	local origin = camera.CFrame.Position
+	local direction = (targetHead.Position - origin).Unit * (targetHead.Position - origin).Magnitude
+	local result = Workspace:Raycast(origin, direction, rayParams)
+	if result then
+		return result.Instance:IsDescendantOf(targetHead.Parent)
+	end
+	return true
+end
+
+local function getClosestEnemy()
+	local closest = nil
+	local shortestDist = math.huge
+	for _, plr in pairs(Players:GetPlayers()) do
+		if plr ~= player and plr.Character and plr.Character:FindFirstChild("Head") then
+			if teamCheckEnabled and plr.Team == player.Team then continue end
+			local head = plr.Character.Head
+			if isVisible(head) then
+				local dist = (head.Position - player.Character.Head.Position).Magnitude
+				local hum = plr.Character:FindFirstChildOfClass("Humanoid")
+				if hum and hum.Health > 0 and dist < shortestDist then
+					shortestDist = dist
+					closest = plr
+				end
+			end
+		end
+	end
+	return closest
+end
+
+----------------------------------------------------
+-- ESP Functions
+----------------------------------------------------
+local function addESP(plr)
+	if plr == player then return end
+	if espFolder:FindFirstChild(plr.Name) then return end
+	if teamCheckEnabled and plr.Team == player.Team then return end
+	if not plr.Character then return end
+
+	local highlight = Instance.new("Highlight")
+	highlight.Name = plr.Name
+	highlight.Adornee = plr.Character
+	highlight.FillColor = Color3.fromRGB(255, 0, 0)
+	highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+	highlight.FillTransparency = 0.5
+	highlight.OutlineTransparency = 0
+	highlight.Parent = espFolder
+end
+
+local function removeESP(plr)
+	local esp = espFolder:FindFirstChild(plr.Name)
+	if esp then esp:Destroy() end
+end
+
+local function refreshESP()
+	for _, child in pairs(espFolder:GetChildren()) do
+		child:Destroy()
+	end
+	if espEnabled then
+		for _, plr in pairs(Players:GetPlayers()) do
+			if plr ~= player then
+				addESP(plr)
+			end
+		end
+	end
+end
+
+----------------------------------------------------
+-- Hitbox Functions (invisible for aiming)
+----------------------------------------------------
+local function updateHitboxes()
+	for _, plr in pairs(Players:GetPlayers()) do
+		if plr ~= player and plr.Character then
+			local head = plr.Character:FindFirstChild("Head")
+			local torso = plr.Character:FindFirstChild("Torso") or plr.Character:FindFirstChild("UpperTorso")
+			if head then
+				if headEnlarged then
+					head.Size = headSize
+					head.Transparency = 1 -- invisible
+					head.CanCollide = false
+				else
+					head.Size = Vector3.new(2,1,1)
+					head.Transparency = 0
+					head.CanCollide = false
+				end
+			end
+			if torso then
+				if torsoEnlarged then
+					torso.Size = torsoSize
+					torso.Transparency = 1 -- invisible
+					torso.CanCollide = false
+				else
+					torso.Size = Vector3.new(2,2,1)
+					torso.Transparency = 0
+					torso.CanCollide = false
+				end
+			end
+		end
+	end
+end
+
+local function handlePlayerHitbox(plr)
+	plr.CharacterAdded:Connect(function()
+		task.wait(1)
+		updateHitboxes()
+	end)
+end
+
+Players.PlayerAdded:Connect(handlePlayerHitbox)
+for _, plr in pairs(Players:GetPlayers()) do
+	if plr ~= player then
+		handlePlayerHitbox(plr)
+	end
+end
+
+----------------------------------------------------
+-- GUI Setup with Loading
+----------------------------------------------------
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "AimbotESP_GUI"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = player:WaitForChild("PlayerGui")
+
+-- Loading Label
+local loadingLabel = Instance.new("TextLabel", screenGui)
+loadingLabel.Size = UDim2.new(0, 220, 0, 30)
+loadingLabel.Position = UDim2.new(0.05, 0, 0.2, 0)
+loadingLabel.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+loadingLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+loadingLabel.Font = Enum.Font.SourceSansBold
+loadingLabel.TextSize = 18
+loadingLabel.Text = "Loading GUI..."
+loadingLabel.TextScaled = true
+
+-- Main Frame
+local mainFrame = Instance.new("Frame", screenGui)
+mainFrame.Size = UDim2.new(0, 220, 0, 160)
+mainFrame.Position = UDim2.new(0.05, 0, 0.2, 0)
+mainFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.Visible = false
+
+local uiCorner = Instance.new("UICorner", mainFrame)
+uiCorner.CornerRadius = UDim.new(0, 10)
+
+-- Title
+local title = Instance.new("TextLabel", mainFrame)
+title.Size = UDim2.new(1, 0, 0, 30)
+title.BackgroundTransparency = 1
+title.Text = "Aim Assist & ESP"
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.Font = Enum.Font.SourceSansBold
+title.TextSize = 18
+
+-- Minimize Button
+local minimize = Instance.new("TextButton", mainFrame)
+minimize.Size = UDim2.new(0, 30, 0, 30)
+minimize.Position = UDim2.new(1, -35, 0, 5)
+minimize.Text = "-"
+minimize.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+minimize.TextColor3 = Color3.fromRGB(255, 255, 255)
+
+-- Scrollable Frame for buttons
+local scrollFrame = Instance.new("ScrollingFrame", mainFrame)
+scrollFrame.Size = UDim2.new(1, -20, 1, -40)
+scrollFrame.Position = UDim2.new(0, 10, 0, 35)
+scrollFrame.BackgroundTransparency = 1
+scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+scrollFrame.ScrollBarThickness = 6
+scrollFrame.VerticalScrollBarInset = Enum.ScrollBarInset.ScrollBar
+
+local uiList = Instance.new("UIListLayout", scrollFrame)
+uiList.SortOrder = Enum.SortOrder.LayoutOrder
+uiList.Padding = UDim.new(0, 10)
+
+-- Buttons (Aimbot, ESP, Team Check, Rainbow)
+local aimbotButton = Instance.new("TextButton", scrollFrame)
+aimbotButton.Size = UDim2.new(1, 0, 0, 40)
+aimbotButton.Text = "Aimbot: OFF (Press E)"
+aimbotButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+aimbotButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+
+local espButton = Instance.new("TextButton", scrollFrame)
+espButton.Size = UDim2.new(1, 0, 0, 40)
+espButton.Text = "ESP: OFF"
+espButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+espButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+
+local teamButton = Instance.new("TextButton", scrollFrame)
+teamButton.Size = UDim2.new(1, 0, 0, 40)
+teamButton.Text = "Team Check: ON"
+teamButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+teamButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+
+local rainbowButton = Instance.new("TextButton", scrollFrame)
+rainbowButton.Size = UDim2.new(1, 0, 0, 40)
+rainbowButton.Text = "Rainbow Mode: OFF"
+rainbowButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+rainbowButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+
+-- Hitbox buttons
+local headButton = Instance.new("TextButton", scrollFrame)
+headButton.Size = UDim2.new(1, 0, 0, 40)
+headButton.Text = "Head Hitbox: OFF"
+headButton.BackgroundColor3 = Color3.fromRGB(60,60,60)
+headButton.TextColor3 = Color3.fromRGB(255,255,255)
+
+local torsoButton = Instance.new("TextButton", scrollFrame)
+torsoButton.Size = UDim2.new(1, 0, 0, 40)
+torsoButton.Text = "Torso Hitbox: OFF"
+torsoButton.BackgroundColor3 = Color3.fromRGB(60,60,60)
+torsoButton.TextColor3 = Color3.fromRGB(255,255,255)
+
+-- Update CanvasSize dynamically
+local function updateCanvas()
+	scrollFrame.CanvasSize = UDim2.new(0, 0, 0, uiList.AbsoluteContentSize.Y + 10)
+end
+uiList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateCanvas)
+updateCanvas()
+
+-- Show main GUI after 3 seconds
+task.spawn(function()
+	task.wait(3)
+	loadingLabel:Destroy()
+	mainFrame.Visible = true
+end)
+
+----------------------------------------------------
+-- GUI Buttons Logic
+----------------------------------------------------
+aimbotButton.MouseButton1Click:Connect(function()
+	aimbotEnabled = not aimbotEnabled
+	aimbotButton.Text = "Aimbot: " .. (aimbotEnabled and "ON (Press E)" or "OFF (Press E)")
+end)
+
+espButton.MouseButton1Click:Connect(function()
+	espEnabled = not espEnabled
+	espButton.Text = "ESP: " .. (espEnabled and "ON" or "OFF")
+	refreshESP()
+end)
+
+teamButton.MouseButton1Click:Connect(function()
+	teamCheckEnabled = not teamCheckEnabled
+	teamButton.Text = "Team Check: " .. (teamCheckEnabled and "ON" or "OFF")
+	refreshESP()
+end)
+
+rainbowButton.MouseButton1Click:Connect(function()
+	rainbowEnabled = not rainbowEnabled
+	rainbowButton.Text = "Rainbow Mode: " .. (rainbowEnabled and "ON" or "OFF")
+end)
+
+headButton.MouseButton1Click:Connect(function()
+	headEnlarged = not headEnlarged
+	headButton.Text = "Head Hitbox: " .. (headEnlarged and "ON" or "OFF")
+	updateHitboxes()
+end)
+
+torsoButton.MouseButton1Click:Connect(function()
+	torsoEnlarged = not torsoEnlarged
+	torsoButton.Text = "Torso Hitbox: " .. (torsoEnlarged and "ON" or "OFF")
+	updateHitboxes()
+end)
+
+local minimized = false
+minimize.MouseButton1Click:Connect(function()
+	minimized = not minimized
+	for _, obj in pairs(scrollFrame:GetChildren()) do
+		if obj:IsA("TextButton") then
+			obj.Visible = not minimized
+		end
+	end
+end)
+
+----------------------------------------------------
+-- Aimbot Logic
+----------------------------------------------------
+UserInputService.InputBegan:Connect(function(input, gpe)
+	if gpe then return end
+	if input.KeyCode == Enum.KeyCode.E and aimbotEnabled then
+		if lockedOn then
+			lockedOn = false
+			target = nil
+			camera.CameraSubject = player.Character:FindFirstChild("Humanoid")
+		else
+			local closest = getClosestEnemy()
+			if closest then
+				lockedOn = true
+				target = closest
+			end
+		end
+	end
+end)
+
+RunService.RenderStepped:Connect(function()
+	-- Rainbow Mode
+	if rainbowEnabled then
+		rainbowHue = (rainbowHue + 0.5) % 360
+		local color = Color3.fromHSV(rainbowHue/360,1,1)
+		for _, child in pairs(espFolder:GetChildren()) do
+			child.FillColor = color
+		end
+		mainFrame.BackgroundColor3 = color
+	end
+
+	-- Aimbot
+	if lockedOn and target then
+		if target.Character and target.Character:FindFirstChild("Head") then
+			local head = target.Character.Head
+			local hum = target.Character:FindFirstChildOfClass("Humanoid")
+			if not hum or hum.Health <= 0 then
+				lockedOn = false
+				target = nil
+				camera.CameraSubject = player.Character:FindFirstChild("Humanoid")
+				return
+			end
+			camera.CFrame = CFrame.new(camera.CFrame.Position, head.Position)
+		else
+			target = getClosestEnemy()
+			if not target then
+				lockedOn = false
+				camera.CameraSubject = player.Character:FindFirstChild("Humanoid")
+			end
+		end
+	end
+end)
+
+----------------------------------------------------
+-- Player Handling for ESP and Hitboxes
+----------------------------------------------------
+Players.PlayerAdded:Connect(function(plr)
+	plr.CharacterAdded:Connect(function()
+		task.wait(1)
+		if espEnabled then addESP(plr) end
+		updateHitboxes()
+	end)
+	plr.CharacterRemoving:Connect(function() removeESP(plr) end)
+end)
+
+Players.PlayerRemoving:Connect(function(plr)
+	removeESP(plr)
+end)
+
+for _, plr in pairs(Players:GetPlayers()) do
+	if plr ~= player then
+		plr.CharacterAdded:Connect(function()
+			task.wait(1)
+			if espEnabled then addESP(plr) end
+			updateHitboxes()
+		end)
+		plr.CharacterRemoving:Connect(function() removeESP(plr) end)
+	end
+end
