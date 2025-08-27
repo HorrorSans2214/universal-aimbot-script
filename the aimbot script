@@ -1,3 +1,4 @@
+-- Services
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
@@ -16,6 +17,11 @@ local rainbowEnabled = false
 local rainbowHue = 0
 local headEnlarged = false
 local torsoEnlarged = false
+local speedEnabled = false
+local infJumpEnabled = false
+
+local normalSpeed = 16
+local boostedSpeed = 50
 
 -- Hitbox sizes (for aiming only)
 local headSize = Vector3.new(10,10,10)
@@ -112,7 +118,7 @@ local function updateHitboxes()
 			if head then
 				if headEnlarged then
 					head.Size = headSize
-					head.Transparency = 1 -- invisible
+					head.Transparency = 1
 					head.CanCollide = false
 				else
 					head.Size = Vector3.new(2,1,1)
@@ -123,7 +129,7 @@ local function updateHitboxes()
 			if torso then
 				if torsoEnlarged then
 					torso.Size = torsoSize
-					torso.Transparency = 1 -- invisible
+					torso.Transparency = 1
 					torso.CanCollide = false
 				else
 					torso.Size = Vector3.new(2,2,1)
@@ -139,6 +145,11 @@ local function handlePlayerHitbox(plr)
 	plr.CharacterAdded:Connect(function()
 		task.wait(1)
 		updateHitboxes()
+		-- Apply speed if enabled
+		if speedEnabled and plr == player then
+			local hum = plr.Character:FindFirstChildOfClass("Humanoid")
+			if hum then hum.WalkSpeed = boostedSpeed end
+		end
 	end)
 end
 
@@ -210,7 +221,7 @@ local uiList = Instance.new("UIListLayout", scrollFrame)
 uiList.SortOrder = Enum.SortOrder.LayoutOrder
 uiList.Padding = UDim.new(0, 10)
 
--- Buttons (Aimbot, ESP, Team Check, Rainbow)
+-- Buttons
 local aimbotButton = Instance.new("TextButton", scrollFrame)
 aimbotButton.Size = UDim2.new(1, 0, 0, 40)
 aimbotButton.Text = "Aimbot: OFF (Press E)"
@@ -235,7 +246,6 @@ rainbowButton.Text = "Rainbow Mode: OFF"
 rainbowButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
 rainbowButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 
--- Hitbox buttons
 local headButton = Instance.new("TextButton", scrollFrame)
 headButton.Size = UDim2.new(1, 0, 0, 40)
 headButton.Text = "Head Hitbox: OFF"
@@ -247,6 +257,20 @@ torsoButton.Size = UDim2.new(1, 0, 0, 40)
 torsoButton.Text = "Torso Hitbox: OFF"
 torsoButton.BackgroundColor3 = Color3.fromRGB(60,60,60)
 torsoButton.TextColor3 = Color3.fromRGB(255,255,255)
+
+-- NEW: Speed Boost Button
+local speedButton = Instance.new("TextButton", scrollFrame)
+speedButton.Size = UDim2.new(1,0,0,40)
+speedButton.Text = "Speed Boost: OFF"
+speedButton.BackgroundColor3 = Color3.fromRGB(60,60,60)
+speedButton.TextColor3 = Color3.fromRGB(255,255,255)
+
+-- NEW: Infinite Jump Button
+local infJumpButton = Instance.new("TextButton", scrollFrame)
+infJumpButton.Size = UDim2.new(1,0,0,40)
+infJumpButton.Text = "Infinite Jump: OFF"
+infJumpButton.BackgroundColor3 = Color3.fromRGB(60,60,60)
+infJumpButton.TextColor3 = Color3.fromRGB(255,255,255)
 
 -- Update CanvasSize dynamically
 local function updateCanvas()
@@ -261,130 +285,3 @@ task.spawn(function()
 	loadingLabel:Destroy()
 	mainFrame.Visible = true
 end)
-
-----------------------------------------------------
--- GUI Buttons Logic
-----------------------------------------------------
-aimbotButton.MouseButton1Click:Connect(function()
-	aimbotEnabled = not aimbotEnabled
-	aimbotButton.Text = "Aimbot: " .. (aimbotEnabled and "ON (Press E)" or "OFF (Press E)")
-end)
-
-espButton.MouseButton1Click:Connect(function()
-	espEnabled = not espEnabled
-	espButton.Text = "ESP: " .. (espEnabled and "ON" or "OFF")
-	refreshESP()
-end)
-
-teamButton.MouseButton1Click:Connect(function()
-	teamCheckEnabled = not teamCheckEnabled
-	teamButton.Text = "Team Check: " .. (teamCheckEnabled and "ON" or "OFF")
-	refreshESP()
-end)
-
-rainbowButton.MouseButton1Click:Connect(function()
-	rainbowEnabled = not rainbowEnabled
-	rainbowButton.Text = "Rainbow Mode: " .. (rainbowEnabled and "ON" or "OFF")
-end)
-
-headButton.MouseButton1Click:Connect(function()
-	headEnlarged = not headEnlarged
-	headButton.Text = "Head Hitbox: " .. (headEnlarged and "ON" or "OFF")
-	updateHitboxes()
-end)
-
-torsoButton.MouseButton1Click:Connect(function()
-	torsoEnlarged = not torsoEnlarged
-	torsoButton.Text = "Torso Hitbox: " .. (torsoEnlarged and "ON" or "OFF")
-	updateHitboxes()
-end)
-
-local minimized = false
-minimize.MouseButton1Click:Connect(function()
-	minimized = not minimized
-	for _, obj in pairs(scrollFrame:GetChildren()) do
-		if obj:IsA("TextButton") then
-			obj.Visible = not minimized
-		end
-	end
-end)
-
-----------------------------------------------------
--- Aimbot Logic
-----------------------------------------------------
-UserInputService.InputBegan:Connect(function(input, gpe)
-	if gpe then return end
-	if input.KeyCode == Enum.KeyCode.E and aimbotEnabled then
-		if lockedOn then
-			lockedOn = false
-			target = nil
-			camera.CameraSubject = player.Character:FindFirstChild("Humanoid")
-		else
-			local closest = getClosestEnemy()
-			if closest then
-				lockedOn = true
-				target = closest
-			end
-		end
-	end
-end)
-
-RunService.RenderStepped:Connect(function()
-	-- Rainbow Mode
-	if rainbowEnabled then
-		rainbowHue = (rainbowHue + 0.5) % 360
-		local color = Color3.fromHSV(rainbowHue/360,1,1)
-		for _, child in pairs(espFolder:GetChildren()) do
-			child.FillColor = color
-		end
-		mainFrame.BackgroundColor3 = color
-	end
-
-	-- Aimbot
-	if lockedOn and target then
-		if target.Character and target.Character:FindFirstChild("Head") then
-			local head = target.Character.Head
-			local hum = target.Character:FindFirstChildOfClass("Humanoid")
-			if not hum or hum.Health <= 0 then
-				lockedOn = false
-				target = nil
-				camera.CameraSubject = player.Character:FindFirstChild("Humanoid")
-				return
-			end
-			camera.CFrame = CFrame.new(camera.CFrame.Position, head.Position)
-		else
-			target = getClosestEnemy()
-			if not target then
-				lockedOn = false
-				camera.CameraSubject = player.Character:FindFirstChild("Humanoid")
-			end
-		end
-	end
-end)
-
-----------------------------------------------------
--- Player Handling for ESP and Hitboxes
-----------------------------------------------------
-Players.PlayerAdded:Connect(function(plr)
-	plr.CharacterAdded:Connect(function()
-		task.wait(1)
-		if espEnabled then addESP(plr) end
-		updateHitboxes()
-	end)
-	plr.CharacterRemoving:Connect(function() removeESP(plr) end)
-end)
-
-Players.PlayerRemoving:Connect(function(plr)
-	removeESP(plr)
-end)
-
-for _, plr in pairs(Players:GetPlayers()) do
-	if plr ~= player then
-		plr.CharacterAdded:Connect(function()
-			task.wait(1)
-			if espEnabled then addESP(plr) end
-			updateHitboxes()
-		end)
-		plr.CharacterRemoving:Connect(function() removeESP(plr) end)
-	end
-end
